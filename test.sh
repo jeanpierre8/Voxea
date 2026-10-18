@@ -14,3 +14,6 @@ swiftc Sources/Voxea/Formatting.swift Tests/Formatting/main.swift -o "$test_dir/
 
 swiftc Sources/Voxea/Diagnostics.swift Sources/Voxea/TextDelivery.swift Tests/Delivery/main.swift -o "$test_dir/delivery-tests"
 "$test_dir/delivery-tests"
+
+swiftc Sources/Voxea/AudioSessionGate.swift Tests/AudioSession/main.swift -o "$test_dir/audio-session-tests"
+"$test_dir/audio-session-tests"

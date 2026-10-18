@@ -4,6 +4,10 @@ import Foundation
 // The audio callback owns the converter; the UI reads bounded snapshots under a lock.
 final class Microphone: @unchecked Sendable {
     private let engine = AVAudioEngine()
+    // Engine teardown can wait on Core Audio. Serialize hardware operations away
+    // from the main thread so recognition/delivery need not wait for teardown.
+    private let engineQueue = DispatchQueue(label: "local.jp.voxea.audio-engine", qos: .userInitiated)
+    private var gate = AudioSessionGate()
     private let lock = NSLock()
     private var samples: [Float] = []
     private var level: Float = 0
@@ -27,8 +31,25 @@ final class Microphone: @unchecked Sendable {
         }
         return (samples, level, failure)
     }
-    func start() throws {
+    private func prepareStart() -> UInt64 {
         clear()
+        lock.lock(); defer { lock.unlock() }
+        return gate.begin()
+    }
+    func start() async throws -> UInt64 {
+        let ticket = prepareStart()
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            engineQueue.async { [self] in
+                do { try startEngine(ticket: ticket); continuation.resume() }
+                catch { continuation.resume(throwing: error) }
+            }
+        }
+        return ticket
+    }
+    private func startEngine(ticket: UInt64) throws {
+        lock.lock(); let valid = gate.generation == ticket; lock.unlock()
+        guard valid else { throw CancellationError() }
+        stopEngine()
         let input = engine.inputNode
         let source = input.outputFormat(forBus: 0)
         guard source.sampleRate > 0, source.channelCount > 0,
@@ -37,6 +58,10 @@ final class Microphone: @unchecked Sendable {
         else { throw PrototypeError.message("Aucune entrée microphone disponible.") }
         input.installTap(onBus: 0, bufferSize: 2048, format: source) { [weak self] buffer, _ in
             guard let self else { return }
+            // Finish an in-flight conversion before key release freezes the
+            // buffer; avoid dropping the tail of a frame already being captured.
+            self.lock.lock(); defer { self.lock.unlock() }
+            guard self.gate.acceptingAudio else { return }
             let capacity = AVAudioFrameCount(ceil(Double(buffer.frameLength) * 16000 / source.sampleRate) + 64)
             guard let output = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: capacity) else { return }
             var supplied = false
@@ -45,7 +70,6 @@ final class Microphone: @unchecked Sendable {
                 if supplied { state.pointee = .noDataNow; return nil }
                 supplied = true; state.pointee = .haveData; return buffer
             }
-            self.lock.lock(); defer { self.lock.unlock() }
             if status == .error { self.failure = error?.localizedDescription ?? "Conversion audio impossible."; return }
             guard let channel = output.floatChannelData?[0] else { return }
             let data = Array(UnsafeBufferPointer(start: channel, count: Int(output.frameLength)))
@@ -54,9 +78,29 @@ final class Microphone: @unchecked Sendable {
             self.level = min(1, max(0, (20 * log10(max(rms, 0.00001)) + 60) / 60))
         }
         tapped = true
-        do { engine.prepare(); try engine.start() } catch { stop(); throw error }
+        lock.lock()
+        let stillValid = gate.activate(ticket)
+        lock.unlock()
+        guard stillValid else { stopEngine(); throw CancellationError() }
+        do { engine.prepare(); try engine.start() }
+        catch {
+            lock.lock(); gate.stop(expectedGeneration: ticket); lock.unlock()
+            stopEngine(); throw error
+        }
     }
-    func stop() {
+    func stop(expectedGeneration: UInt64? = nil) {
+        // Freeze the audio at key release before returning. Late tap callbacks
+        // cannot extend this recording or contaminate the following one.
+        lock.lock(); let shouldStop = gate.stop(expectedGeneration: expectedGeneration); lock.unlock()
+        guard shouldStop else { return }
+        let requestedAt = ProcessInfo.processInfo.systemUptime
+        engineQueue.async { [self] in
+            stopEngine()
+            let elapsed = (ProcessInfo.processInfo.systemUptime - requestedAt) * 1000
+            Task { @MainActor in Diagnostics.log("audio engineStopped elapsedMs=\(String(format: "%.1f", elapsed))") }
+        }
+    }
+    private func stopEngine() {
         engine.stop()
         if tapped { engine.inputNode.removeTap(onBus: 0); tapped = false }
     }

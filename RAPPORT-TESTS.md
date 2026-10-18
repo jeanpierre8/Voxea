@@ -209,3 +209,45 @@ La restauration du presse-papiers est attestée par les traces ; le contenu n’
 Le contrôle de l’interface ChatGPT via l’outil d’automatisation est explicitement refusé sur cette machine (`Computer Use is not allowed to use the app 'com.openai.codex' for safety reasons`). Il n’a pas été contourné. La vérification visuelle ChatGPT dépend donc du retour utilisateur, complété par l’instrumentation de Voxea.
 
 Le correctif et le rapport sont enregistrés dans un commit séparé de `ce28a04`, après les retours utilisateur et l’examen des traces du parcours réel. Le dépôt ne déclare aucun distant Git ; aucun push n’a été effectué. `.rollback/` est conservé, non suivi comme au début. Les sauvegardes `.app.bak` et `.swift.bak` ne sont pas modifiées.
+
+
+## 18 octobre 2026 — optimisation de latence, Voxea 0.4.2 (build 8)
+
+### Changements
+
+- Arrêt et démarrage du moteur audio sur une file série dédiée : la transcription ne dépend plus de l’arrêt matériel complet. Le tampon est figé au relâchement ; une conversion déjà en cours se termine sous le même verrou pour conserver sa fin. Les opérations matérielles restent sérialisées.
+- Protection par génération de session : un démarrage annulé qui se termine tard ne peut ni réactiver l’ancienne capture ni arrêter une nouvelle dictée.
+- Annulation coopérative de l’aperçu obsolète, puis attente de sa terminaison avant la transcription finale. La phrase complète est toujours retranscrite, sans réutiliser un aperçu tronqué.
+- Le délai de lecture du presse-papiers est compté depuis l’envoi du collage, au lieu d’ajouter 900 ms après la fenêtre de vérification. Si la modification attendue est confirmée, le champ a déjà consommé le texte et la restauration peut se faire immédiatement. La protection contre une nouvelle copie utilisateur est conservée.
+- La bulle se ferme dès l’envoi du collage. L’ancienne attente de 2,5 s après la livraison n’est maintenue que pour laisser lire un échec d’insertion. Le texte reste disponible dans la fenêtre principale, avec le résultat de la vérification.
+- Traces horodatées à la milliseconde, durées monotones jusqu’à la transcription, à l’envoi et à la fin de livraison, sans contenu dicté ni audio.
+
+### Vérifications et mesures
+
+102 tests automatisés réussis : 12 raccourci, 41 mémoire, 27 formatage, 12 livraison/confirmation et 10 génération de session audio.
+
+Le test `--benchmark-cancellation TestAudio/fr-long.aiff` a réellement interrompu cinq aperçus en cours dans FluidAudio : les cinq transcriptions finales sont identiques à la référence sans annulation. Les sorties finales des trois fichiers audio de référence FR, EN et FR long sont également identiques entre 0.4.1 et le code optimisé. Ces essais sur fichiers ne sont pas présentés comme des dictées au microphone.
+
+Avant changement, les passes finales sur ces fichiers prenaient respectivement 54,8 ms, 43,2 ms et 105,6 ms sur ce Mac. Elles montrent que Parakeet n’était pas la principale attente sur ces extraits. Les anciens journaux de dictée, arrondis à la seconde, ne permettent pas de calculer un pourcentage fiable de gain avant/après.
+
+Deux essais microphone dans ChatGPT (`com.openai.codex`) après réautorisation ont été examinés :
+
+| Mesure depuis la fin de dictée | Build 7, 14:38:45 | Build 8, 14:42:11 |
+|---|---:|---:|
+| Prêt pour transcription finale | 170,6 ms | 85,6 ms |
+| Transcription achevée | 219,3 ms | 140,9 ms |
+| Calcul Parakeet final seul | 48,6 ms | 55,2 ms |
+| Callback d’envoi (incluant fermeture de bulle en build 8) | 314,2 ms | 237,4 ms |
+| Fin de livraison / disponibilité suivante | 1 645,9 ms | 1 591,9 ms |
+
+Pour le build 8, l’événement de collage a été posté à 14:42:11,400, et la bulle masquée à 14:42:11,407, après le relâchement à 14:42:11,169. Ces chiffres mesurent l’envoi et la fermeture de bulle ; ils ne mesurent pas indépendamment le rendu visuel de ChatGPT. Le dernier essai contient 89 440 échantillons (~5,6 s) et une transcription de 51 caractères. L’arrêt matériel, exécuté à part, prend 27,3 ms sur cet essai.
+
+L’utilisateur a confirmé « Plus rapide, texte complet » sur le premier essai, puis « Oui, la bulle disparaît au collage » sur le build 8. Les traces attestent `file=false`, `trusted=true`, le même champ AXTextArea, un overlay non actif, le collage et la restauration du presse-papiers (un élément).
+
+### Limites conservées
+
+La vérification exacte AX du remplacement reste non confirmée dans ces deux essais ChatGPT : résultat `method=paste`, succès visuel confirmé par l’utilisateur, sans prétendre `method=confirmed`. Le traitement de vérification/restauration peut donc rester occupé environ 1,3 s après l’envoi ; la bulle ne le masque plus à l’utilisateur et le texte est déjà envoyé. Le prochain raccourci n’est accepté qu’après la fin de livraison. Les gains sur des dictées longues ou dans d’autres applications ne sont pas extrapolés à partir de ces deux essais. Le mode appui-bascule n’a pas fait l’objet d’un nouvel essai microphone distinct.
+
+Au premier déclenchement de chaque nouveau binaire, une notification macOS a interrompu l’armement ; ces essais sont exclus des mesures de succès. Le second déclenchement a enregistré la dictée. Les autorisations ont été renouvelées manuellement par l’utilisateur ; aucun contournement TCC n’a été ajouté.
+
+Le binaire final est 0.4.2, build 8, signé localement. SHA-256 de `Contents/MacOS/Voxea` : `14745857beaeb4f7e30970f6e0d66b0a944c50b2498d0b89113f8108d3e2eb5f`. Il ne sera pas recompilé pour l’archive de publication. La version 0.4.1 reste disponible dans la Release précédente et dans une sauvegarde locale de travail. Les sauvegardes `.rollback/` et `.app.bak` ne sont pas modifiées.

@@ -21,7 +21,7 @@ Le modèle est préparé durant les essais de développement et occupe environ 4
 3. Placer le curseur dans un champ éditable d’une autre application.
 4. Utiliser **Contrôle + Majuscule + W** : maintenir pour parler, relâcher pour terminer. Au premier essai, accepter la permission microphone puis recommencer la dictée si la touche a été relâchée pendant le dialogue.
 5. Les barres réagissent au volume réel. Le texte de l’overlay est provisoire. Seul le résultat final est inséré ; aucune touche Entrée n’est envoyée.
-6. Échap annule pendant l’enregistrement. Si le champ a changé ou refuse l’accessibilité, ouvrir la fenêtre par la barre des menus et récupérer le dernier texte final. La copie automatique du texte final est activée par défaut ; le bouton Copier permet aussi de recopier le dernier texte.
+6. Échap annule pendant l’enregistrement. Si le champ a changé ou refuse l’accessibilité, ouvrir la fenêtre par la barre des menus et récupérer le dernier texte final. La copie automatique du texte final est désactivée par défaut pour préserver le presse-papiers ; le bouton Copier permet aussi de recopier le dernier texte.
 
 Le raccourci peut entrer en conflit avec macOS ou une autre application : choisir une autre combinaison en cas d’erreur ou d’absence de réponse. Le prototype propose toutes les combinaisons de Ctrl, Option, Majuscule et Commande, ainsi que les lettres A–Z, les chiffres, Espace et F1–F20 ; Fn/Globe et les modificateurs seuls sont différés pour éviter une permission de surveillance du clavier.
 
@@ -34,11 +34,11 @@ Le raccourci actuel est **Contrôle + Majuscule + W**, soit **Ctrl + Maj + W** s
 Dans la fenêtre de Voxea, les deux options de **Après la dictée** sont indépendantes et mémorisées immédiatement :
 
 - **Insérer automatiquement dans le champ actif** : écrire au curseur, ou remplacer la sélection active, si le champ ciblé est toujours le même.
-- **Copier automatiquement le texte final** : conserver le résultat dans le presse-papiers après chaque transcription réussie. Vous pouvez ensuite cliquer dans une autre sélection et utiliser **Commande + V**. Activée par défaut, même si l’insertion échoue.
+- **Copier automatiquement le texte final** : conserver le résultat dans le presse-papiers après chaque transcription réussie. Vous pouvez ensuite cliquer dans une autre sélection et utiliser **Commande + V**. Désactivée par défaut ; si vous l’activez, elle fonctionne même si l’insertion échoue.
 
 Pour dicter uniquement vers le presse-papiers, désactiver l’insertion et garder la copie. Si les deux options sont désactivées, le texte reste dans la fenêtre de Voxea. Les aperçus, les captures annulées, trop courtes ou silencieuses ne remplacent pas le presse-papiers.
 
-Pour les champs web, Voxea utilise le collage afin que l’éditeur traite correctement la modification. Si la copie automatique est désactivée, ce collage utilise temporairement le presse-papiers puis restaure son contenu après 0,7 s, à condition qu’aucune autre copie n’ait eu lieu entre-temps. Un éditeur qui lit le presse-papiers très tard peut nécessiter de laisser la copie automatique activée. Aucun message n’est envoyé automatiquement.
+Pour les champs web, Voxea utilise le collage afin que l’éditeur traite correctement la modification. Si la copie automatique est désactivée, ce collage utilise temporairement le presse-papiers puis restaure son contenu lorsque la modification attendue est confirmée ; sinon il conserve une fenêtre de lecture d’au moins 0,9 s après l’envoi. La restauration est abandonnée si une nouvelle copie a eu lieu entre-temps. Un éditeur qui lit le presse-papiers très tard peut nécessiter de laisser la copie automatique activée. Aucun message n’est envoyé automatiquement.
 
 Cliquez réellement dans la zone de rédaction avant de dicter : survoler le champ avec la souris ne lui donne pas le focus.
 
@@ -116,4 +116,9 @@ Les réglages affichent la version et le numéro de build sous le nom Voxea, lus
 
 ## Mise en forme — 0.4.0 · build 5
 
-L’onglet **Mise en forme** ajoute les commandes vocales de lignes, paragraphes et listes, les majuscules, le retrait du point final et des hésitations. Options indépendantes, aperçu et profils par application. Voir [MISE-EN-FORME.md](MISE-EN-FORME.md). Le numéro visible dans les réglages est lu dans l’application installée ; la version courante est 0.4.0, build 5.
+L’onglet **Mise en forme** ajoute les commandes vocales de lignes, paragraphes et listes, les majuscules, le retrait du point final et des hésitations. Options indépendantes, aperçu et profils par application. Voir [MISE-EN-FORME.md](MISE-EN-FORME.md). Le numéro visible dans les réglages est lu dans l’application installée ; la version courante est 0.4.2, build 8.
+
+
+## Réactivité — 0.4.2 · build 8
+
+La bulle disparaît dès l’envoi du collage. L’arrêt matériel du microphone ne bloque plus la transcription finale et l’aperçu obsolète est annulé. Le presse-papiers reste protégé. Sur le dernier essai microphone dans ChatGPT, la bulle a disparu environ 0,24 s après le relâchement, avec un texte complet confirmé par l’utilisateur. Cette mesure ponctuelle ne garantit pas un délai identique pour toutes les dictées. La vérification du collage peut encore occuper le traitement brièvement après la disparition de la bulle ; attendre sa fin avant une nouvelle dictée. Voir [RAPPORT-TESTS.md](RAPPORT-TESTS.md).

@@ -233,21 +233,30 @@ import FluidAudio
                 }
             }
             guard ticket == session, arming else { return }
-            arming = false
-            guard allowed else { status = "Microphone refusé. Autoriser Voxea dans Réglages système > Confidentialité > Microphone."; keyState.cancel(); return }
+            guard allowed else { arming = false; status = "Microphone refusé. Autoriser Voxea dans Réglages système > Confidentialité > Microphone."; keyState.cancel(); return }
             do {
                 cue("Tink")
                 // Let the start cue finish before the microphone captures audio.
                 try await Task.sleep(nanoseconds: 180_000_000)
                 guard ticket == session, keyState.recording else { return }
-                if let testAudio { microphone.startTest(testAudio) } else { try microphone.start() }
+                let audioTicket: UInt64?
+                if let testAudio { microphone.startTest(testAudio); audioTicket = nil }
+                else { audioTicket = try await microphone.start() }
+                guard ticket == session, keyState.recording else {
+                    if let audioTicket { microphone.stop(expectedGeneration: audioTicket) }
+                    return
+                }
+                arming = false
                 Diagnostics.log("microphone.started file=\(testAudio != nil) targetFocused=\(target?.stillFocused() ?? false)")
                 recording = true; provisional = ""; seconds = 0; lastPartialCount = 0
                 status = testAudio == nil ? "Écoute · Échap pour annuler" : "Fichier test · Échap pour annuler"; hotkey.captureEscape(true); showOverlay()
                 timer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak model = self] _ in
                     Task { @MainActor in model?.tick() }
                 }
-            } catch { status = error.localizedDescription; keyState.cancel() }
+            } catch {
+                guard ticket == session else { return }
+                arming = false; status = error.localizedDescription; keyState.cancel()
+            }
         }
     }
     private func tick() {
@@ -270,8 +279,9 @@ import FluidAudio
         }
     }
     func finish() {
+        let releasedAt = ProcessInfo.processInfo.systemUptime
         Diagnostics.log("finish arming=\(arming) recording=\(recording)")
-        if arming { arming = false; session = UUID(); keyState.cancel(); return }
+        if arming { arming = false; session = UUID(); keyState.cancel(); microphone.stop(); return }
         guard recording else { return }
         recording = false; busy = true; timer?.invalidate(); timer = nil
         microphone.stop(); hotkey.captureEscape(false); level = 0
@@ -282,9 +292,13 @@ import FluidAudio
         let destination = target
         let contextBundleID = targetBundleID; targetBundleID = nil
         let ticket = session; let pending = worker
+        // An in-flight preview is obsolete as soon as recording ends. FluidAudio
+        // cooperatively checks cancellation; still join it before final decoding.
+        pending?.cancel()
         status = "Transcription finale…"
         Task {
             await pending?.value
+            Diagnostics.log("timing stage=readyForFinal elapsedMs=\(Diagnostics.elapsedMS(since: releasedAt))")
             guard ticket == session else { busy = false; return }
             defer { busy = false; target = nil }
             guard samples.count >= 4800, samples.contains(where: { abs($0) > 0.01 }) else {
@@ -295,6 +309,7 @@ import FluidAudio
                 let original = try await recognition.transcribe(samples)
                 guard ticket == session else { return }
                 latency = Date().timeIntervalSince(start)
+                Diagnostics.log("timing stage=transcribed elapsedMs=\(Diagnostics.elapsedMS(since: releasedAt)) asrMs=\(String(format: "%.1f", latency * 1000))")
                 rawText = original; lastDictationBundleID = contextBundleID
                 let corrected = previewMemory(original, bundleID: contextBundleID)
                 appliedCorrections = corrected.applied; correctionSuggestions = corrected.suggestions
@@ -303,17 +318,25 @@ import FluidAudio
                 finalText = formatted; provisional = formatted
                 countCorrections(corrected.usage)
                 Diagnostics.log("transcribed chars=\(formatted.count) destination=\(destination?.fingerprint ?? "nil") insert=\(automaticInsertion) copy=\(automaticCopy)")
-                let result = await TextDelivery.deliver(formatted, to: target == nil ? nil : destination, insert: automaticInsertion, keepCopy: automaticCopy)
-                Diagnostics.log("delivery method=\(result.method.rawValue)")
+                let result = await TextDelivery.deliver(formatted, to: target == nil ? nil : destination, insert: automaticInsertion, keepCopy: automaticCopy) {
+                    self.latency = ProcessInfo.processInfo.systemUptime - releasedAt
+                    self.overlay?.orderOut(nil)
+                    Diagnostics.log("overlay hidden reason=pastePosted")
+                    Diagnostics.log("timing stage=pastePosted elapsedMs=\(Diagnostics.elapsedMS(since: releasedAt))")
+                }
+                Diagnostics.log("delivery method=\(result.method.rawValue) elapsedMs=\(Diagnostics.elapsedMS(since: releasedAt))")
                 accessGranted = AXIsProcessTrusted()
                 status = result.message + " · " + String(format: "%.2f", latency) + " s"
                 if !corrected.applied.isEmpty { status += " · \(corrected.applied.count) correction(s)" }
                 if memoryEnabled && memoryStore == nil { status += " · dictionnaire indisponible" }
-                // The next dictation can start immediately; only the visual dismissal is delayed.
-                Task {
-                    try? await Task.sleep(nanoseconds: 2_500_000_000)
-                    if ticket == session { overlay?.orderOut(nil) }
-                }
+                if result.method == .unavailable {
+                    // Leave an insertion failure visible briefly. Success was
+                    // already dismissed at paste posting, before confirmation.
+                    Task {
+                        try? await Task.sleep(nanoseconds: 2_500_000_000)
+                        if ticket == session { overlay?.orderOut(nil) }
+                    }
+                } else { overlay?.orderOut(nil) }
             } catch { status = "Échec : \(error.localizedDescription). L’aperçu reste visible." }
         }
     }
@@ -427,7 +450,7 @@ struct SettingsView: View {
             HStack {
                 Button("Copier le texte") { model.copyFinal() }.disabled(model.finalText.isEmpty)
                 Spacer()
-                Text("\(String(format: "%.2f", model.latency)) s · dernière passe").font(.caption).foregroundStyle(.secondary)
+                Text("\(String(format: "%.2f", model.latency)) s · transcription / envoi").font(.caption).foregroundStyle(.secondary)
             }
             if !model.rawText.isEmpty {
                 DisclosureGroup("Transcription brute de la dernière dictée") {
@@ -521,11 +544,14 @@ struct SettingsView: View {
             application.run()
             return
         }
-        if args.contains("--benchmark") || args.contains("--prepare") {
+        if args.contains("--benchmark") || args.contains("--prepare") || args.contains("--benchmark-cancellation") {
             Task {
                 do {
                     let paths = args.filter { !$0.hasPrefix("--") }
-                    try await benchmark(paths, download: args.contains("--prepare"))
+                    if args.contains("--benchmark-cancellation") {
+                        guard let path = paths.first else { throw PrototypeError.message("Choisir un fichier audio de test.") }
+                        try await benchmarkCancellation(path)
+                    } else { try await benchmark(paths, download: args.contains("--prepare")) }
                     exit(0)
                 } catch { fputs("ERROR: \(error.localizedDescription)\n", stderr); exit(1) }
             }

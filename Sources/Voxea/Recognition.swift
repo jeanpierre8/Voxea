@@ -13,10 +13,13 @@ actor Recognition {
         manager = engine
     }
     func transcribe(_ samples: [Float]) async throws -> String {
+        try Task.checkCancellation()
         guard let manager else { throw PrototypeError.message("Charger le modèle avant de dicter.") }
         // Independent decoder state: provisional passes must not contaminate final decoding.
         var state = try TdtDecoderState()
-        return try await manager.transcribe(samples, decoderState: &state).text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let result = try await manager.transcribe(samples, decoderState: &state)
+        try Task.checkCancellation()
+        return result.text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 enum PrototypeError: LocalizedError {
@@ -44,4 +47,27 @@ func benchmark(_ paths: [String], download: Bool) async throws {
         let data = try JSONSerialization.data(withJSONObject: ["file": URL(fileURLWithPath: path).lastPathComponent, "passes": rows], options: [.sortedKeys])
         print(String(decoding: data, as: UTF8.self))
     }
+}
+
+
+// Exercises the actual decoder after interrupting previews. This is an audio-file
+// regression check, not a microphone/insertion test.
+func benchmarkCancellation(_ path: String) async throws {
+    let engine = Recognition()
+    try await engine.prepare()
+    let samples = try AudioConverter().resampleAudioFile(URL(fileURLWithPath: path))
+    let reference = try await engine.transcribe(samples)
+    var cancelled = 0
+    for index in 0..<5 {
+        let preview = Task { try await engine.transcribe(Array(samples.prefix(samples.count / 2))) }
+        try await Task.sleep(nanoseconds: 5_000_000)
+        preview.cancel()
+        do { _ = try await preview.value }
+        catch is CancellationError { cancelled += 1 }
+        let result = try await engine.transcribe(samples)
+        guard result == reference else { throw PrototypeError.message("Transcription différente après annulation d’aperçu.") }
+        print("CANCELLATION_PASS iteration=\(index + 1) final_matches=true")
+    }
+    guard cancelled > 0 else { throw PrototypeError.message("Aucune annulation observée ; essai non probant.") }
+    print("CANCELLATION_SUMMARY cancelled=\(cancelled) final_matches=5")
 }

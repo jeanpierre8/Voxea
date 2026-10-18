@@ -170,7 +170,14 @@ import Carbon
         }
         return NSPasteboard.general.changeCount == start ? result : nil
     }
-    static func deliver(_ text: String, to target: InsertionTarget?, insert: Bool, keepCopy: Bool) async -> Result {
+    // Confirmation proves that the editor has already consumed the clipboard.
+    // Otherwise preserve the original 900 ms read window, counted from posting,
+    // rather than adding it after the polling window has already elapsed.
+    static func clipboardGrace(confirmed: Bool, elapsed: TimeInterval) -> TimeInterval {
+        confirmed ? 0 : max(0, 0.9 - max(0, elapsed))
+    }
+    static func deliver(_ text: String, to target: InsertionTarget?, insert: Bool, keepCopy: Bool,
+                        onPasteSent: (() -> Void)? = nil) async -> Result {
         Diagnostics.log("deliver insert=\(insert) keepCopy=\(keepCopy) target=\(target?.fingerprint ?? "nil") chars=\(text.count)")
         guard !text.isEmpty else { return Result(method: .empty, copied: false, message: "Aucune parole reconnue.") }
         // Copying permanently is an explicit setting, disabled by default.
@@ -200,6 +207,8 @@ import Carbon
         copy(text)
         let pasteChange = NSPasteboard.general.changeCount
         let sent = target.sendPaste()
+        let postedAt = ProcessInfo.processInfo.systemUptime
+        if sent { onPasteSent?() }
         var confirmed = false
         if sent {
             for _ in 0..<12 {
@@ -211,7 +220,10 @@ import Carbon
         if !keepCopy {
             // Give consumers time to read a posted paste, including editors whose
             // AXValue is unavailable. Do not retry paste and risk duplicating it.
-            if sent { try? await Task.sleep(nanoseconds: 900_000_000) }
+            if sent {
+                let remaining = clipboardGrace(confirmed: confirmed, elapsed: ProcessInfo.processInfo.systemUptime - postedAt)
+                if remaining > 0 { try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000)) }
+            }
             if NSPasteboard.general.changeCount == pasteChange {
                 NSPasteboard.general.clearContents()
                 if !saved.isEmpty { NSPasteboard.general.writeObjects(saved) }
