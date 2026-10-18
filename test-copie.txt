@@ -1,0 +1,1 @@
+OUTPUT_TEST method=clipboard copied=true web=false

@@ -1,0 +1,32 @@
+[
+  {
+    "sample": "fr.aiff",
+    "reference": "Bonjour, aujourd’hui je prépare une application de dictée vocale. Le traitement reste entièrement sur mon ordinateur.",
+    "final": "Bonjour, aujourd'hui je prépare une application de dicté vocale, le traitement reste entièrement sur mon ordinateur.",
+    "seconds": 7.30025,
+    "final_ms": 47.2719669342041,
+    "word_errors": 1,
+    "reference_words": 17,
+    "wer": 0.058823529411764705
+  },
+  {
+    "sample": "en.aiff",
+    "reference": "Hello, today I am testing a local voice dictation application. The final text should appear in the active window.",
+    "final": "Hello, today I am testing a local voice dictation application, the final text should appear in the active window.",
+    "seconds": 6.81125,
+    "final_ms": 44.210076332092285,
+    "word_errors": 0,
+    "reference_words": 19,
+    "wer": 0.0
+  },
+  {
+    "sample": "fr-long.aiff",
+    "reference": "Bonjour, je teste maintenant une dictée plus longue pour vérifier le traitement progressif. Je souhaite écrire un message en français avec des accents et une ponctuation naturelle. L’application doit conserver le texte complet, même lorsque plusieurs segments audio sont nécessaires. À la fin de cet essai, le résultat sera affiché dans la fenêtre active.",
+    "final": "Bonjour, je teste maintenant une dictée plus longue pour vérifier le traitement progressif. Je souhaite écrire un message en français avec des accents et une ponctuation naturelle. L'application doit conserver le texte complet, même lorsque plusieurs segments audio sont nécessaires. A la fin de cet essai, le résultat sera affiché dans la fenêtre active.",
+    "seconds": 20.9973125,
+    "final_ms": 102.64503955841064,
+    "word_errors": 1,
+    "reference_words": 55,
+    "wer": 0.01818181818181818
+  }
+]

@@ -1,0 +1,7 @@
+.build/
+.swiftpm/
+*.app/
+.DS_Store
+*.bak*
+*.zip
+Voxea.app.bak*

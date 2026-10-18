@@ -1,0 +1,56 @@
+PASS Unmatched release ignored
+PASS Hold starts
+PASS Repeat ignored
+PASS Release stops
+PASS Duplicate release ignored
+PASS Toggle starts
+PASS Toggle continues after release
+PASS Second press stops
+PASS Stop repeat ignored
+PASS Toggle restarts
+PASS Cancel then release does not finalize
+PASS Can restart after cancellation
+12 checks passed
+PASS SQLite insert
+PASS Persistence on reopen
+PASS Case, punctuation and repeated matches
+PASS No partial words
+PASS Nonbreaking space
+PASS No match across newlines
+PASS Longest phrase and no cascading
+PASS Canonical Unicode normalization
+PASS Accents remain significant
+PASS Literal special characters and boundaries
+PASS Application-specific precedence
+PASS Global rule in other application
+PASS Scoped suggestion overrides global automation
+PASS Explicit suggestion acceptance
+PASS Disabled rules do not apply
+PASS Disabled state persists
+PASS Usage counter survives editing
+PASS Rule editing persists
+PASS Duplicate rule rejected
+PASS Same phrase allowed in distinct scope
+PASS Empty phrase rejected
+PASS Empty replacement rejected
+PASS Multiline rules rejected
+PASS NUL rejected
+PASS SQL parameters preserve quoted input
+PASS Deletion persists
+PASS Undo can restore rule and counters
+PASS Database file is private
+PASS Unreadable database reports an error
+PASS Future schema rejected
+PASS Future schema version preserved
+PASS Incompatible schema rejected
+PASS Failed migration rolled back
+PASS Existing data preserved on failed migration
+PASS Corrupted database fails locally
+PASS Corrupted file not replaced
+PASS Write contention fails without blocking indefinitely
+PASS Failed statistics write is atomic
+PASS Suggestion mode persists
+PASS Empty dictionary preserves original bytes
+PASS 500-rule dictionary
+CORRECTION_500_RULES_MS 1.2600421905517578
+41 memory checks passed

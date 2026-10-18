@@ -1,0 +1,13 @@
+PASS Unmatched release ignored
+PASS Hold starts
+PASS Repeat ignored
+PASS Release stops
+PASS Duplicate release ignored
+PASS Toggle starts
+PASS Toggle continues after release
+PASS Second press stops
+PASS Stop repeat ignored
+PASS Toggle restarts
+PASS Cancel then release does not finalize
+PASS Can restart after cancellation
+12 checks passed
