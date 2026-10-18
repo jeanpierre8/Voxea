@@ -11,3 +11,6 @@ swiftc -I Sources/CSQLite Sources/Voxea/CorrectionStore.swift Sources/Voxea/Corr
 
 swiftc Sources/Voxea/Formatting.swift Tests/Formatting/main.swift -o "$test_dir/formatting-tests"
 "$test_dir/formatting-tests"
+
+swiftc Sources/Voxea/Diagnostics.swift Sources/Voxea/TextDelivery.swift Tests/Delivery/main.swift -o "$test_dir/delivery-tests"
+"$test_dir/delivery-tests"

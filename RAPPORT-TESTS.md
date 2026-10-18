@@ -135,3 +135,77 @@ Compilation 0.3.1 réussie. Vérification dans la fenêtre relancée : « Versio
 Limites : commandes françaises reconnues littéralement, dépendantes de la transcription de Parakeet ; elles ne sont pas distinguées d’une citation. La liste ne se poursuit pas entre deux dictées. Les règles de casse et d’hésitations sont volontairement simples et désactivables ; elles ne remplacent pas une analyse linguistique. L’aperçu ne teste pas le dictionnaire. Voir MISE-EN-FORME.md.
 
 Essai audio de bout en bout : voix locale Thomas, fichier de 5 s contenant « Bonjour à la ligne faire une liste du pain élément suivant du lait fin de liste merci ». Parakeet V3 → mise en forme → copie : résultat observé « Bonjour », puis deux puces « Du pain » / « Du lait », puis « Merci », avec de vrais sauts de ligne. Dernière passe ASR affichée 0,05 s. Collage dans l’aperçu de Voxea : contenu réel du presse-papiers conforme. L’insertion a été désactivée uniquement pendant cet essai, puis rétablie ; retour au microphone effectué. La nouvelle insertion dans une application externe reste à vérifier après renouvellement de l’autorisation macOS. Présentation visuelle du nouvel onglet contrôlée.
+
+
+## 18 octobre 2026 — réparation de l’insertion, version 0.4.1 (build 6)
+
+### Résultat établi et limite de causalité
+
+Une dictée réelle a été effectuée par l’utilisateur dans ChatGPT avec Ctrl+Maj+W, en mode microphone (pas `--test-output`, pas fichier audio). Le résultat visuel rapporté est « Texte dans Voxea seulement ».
+
+Les traces du 18 octobre, à 14:07:03–14:07:09 heure de Paris, montrent :
+
+- application active `com.openai.codex`, PID 27480 ;
+- `begin insert=true copy=true file=false` ;
+- `capture denied trust/front`, `captured target=nil trusted=false` ;
+- démarrage du microphone et overlay `key=false` ;
+- relâchement du raccourci, 95 918 échantillons à 16 kHz (~6 secondes), signal audible ;
+- transcription finale de 33 caractères ;
+- livraison `method=unavailable`, destination absente.
+
+Le blocage de **cette reproduction** est donc le refus de l’autorisation Accessibilité, et non une transcription manquante ou un overlay devenu fenêtre active. Attention : cette reproduction a eu lieu après recompilation pour ajouter les traces. Elle ne démontre pas à elle seule que le binaire antérieur échouait pour la même raison. Aucune trace de dictée réelle de ce binaire n’était disponible. Les anciens journaux sous `/private/tmp/voxea-*` concernent d’autres PID et ne prouvent pas le fonctionnement courant.
+
+La signature est ad hoc ; aucune identité de signature de développement n’est disponible. Une recompilation peut invalider l’autorisation macOS. Le build 6 a été relancé et affiche « Accessibilité : à autoriser ». Il faut réautoriser **ce binaire exact**, sans modifier les protections macOS. Ne pas recompiler entre réautorisation et essai.
+
+### Modifications livrées
+
+- Traces locales dans `~/Library/Logs/Voxea/insertion.log`, bornées à environ 1 Mo, fichier créé en mode 600. Elles décrivent raccourci, application, capture, transitions d’application, modificateurs, étapes audio/transcription et livraison. Aucun texte de champ, contenu dicté, contenu du presse-papiers ou audio n’est journalisé.
+- Actualisation de l’état Accessibilité au début de chaque dictée et message explicite en cas de refus.
+- Suppression du choix arbitraire `deepestEditor` dans toutes les fenêtres. La récupération exige un unique éditeur explicitement focalisé dans la fenêtre active et une recherche bornée.
+- Validation du même élément AX et de la même fenêtre ; abandon de l’empreinte PID/rôle/position comme preuve de focus. Cette vérification conservatrice peut refuser un éditeur Chromium qui recrée ses éléments ; la compatibilité doit être vérifiée en conditions réelles.
+- `AXEnhancedUserInterface` demandé au début de la capture, sans réactiver cet attribut à chaque contrôle du focus.
+- Invalidation de la destination si l’application change pendant l’enregistrement/la transcription. Abandon si texte ou sélection a changé avant collage.
+- Attente du relâchement réel de Ctrl/Maj/Option/Cmd, avec délai maximal de 3 secondes ; aucune libération artificielle des touches de l’utilisateur.
+- Confirmation par changement effectif d’AXValue et remplacement attendu lorsque la sélection est lisible. Si elle ne l’est pas, lecture modifiée contenant la totalité de la dictée ; ce contrôle de secours reste moins probant qu’une comparaison exacte. Aucun suffixe de 40 caractères préexistant ne suffit plus.
+- Presse-papiers sauvegardé avant collage et restauré si son compteur n’a pas changé. Abandon si la sauvegarde est incomplète. La copie automatique permanente est désormais désactivée par défaut ; une préférence explicitement activée conserve sa fonction.
+- Les exclusions des champs protégés sont conservées ; aucun Enter ni envoi de message n’est ajouté.
+- Version 0.4.1, build 6 ; rappel de vérifier l’autorisation après compilation dans le script de construction.
+
+### Vérifications réalisées
+
+- Compilation release réussie et application redéployée à `~/Documents/Voxea/Voxea.app` ; signature vérifiée.
+- Interface de l’application relancée : build 6, Parakeet prêt, Ctrl+Maj+W, insertion activée, copie automatique désactivée.
+- 88 vérifications réussies : 12 raccourci/état, 41 mémoire, 27 formatage, 8 confirmation du texte (dont sélection UTF-16 et refus du faux succès par suffixe inchangé).
+- Aucun ancien succès `--test-output method=confirmed` n’a été utilisé comme validation.
+
+### Validation après réautorisation du build 6
+
+L’utilisateur a retiré/réajouté Voxea dans les autorisations macOS, puis confirmé « ça remarche ». La version qui fonctionne n’a pas été recompilée ni resignée après cette réautorisation.
+
+**ChatGPT, 14:19:21–14:19:27 (heure de Paris)** :
+
+- Ctrl+Maj+W, application active `com.openai.codex`, mode microphone `file=false`, insertion activée, copie automatique désactivée ;
+- `trusted=true`, capture directe de `AXTextArea`, champ encore focalisé au démarrage du microphone ;
+- overlay non actif (`key=false`), 43 142 échantillons (~2,7 s), signal audible ;
+- Parakeet a produit 19 caractères ; collage envoyé avec modificateurs du raccourci relâchés ;
+- presse-papiers restauré, un élément sauvegardé ;
+- lecture AX avant/après : 24 puis 19 caractères ; `sent=true confirmed=false`, résultat `method=paste`.
+
+L’insertion visible est confirmée par l’utilisateur. **La confirmation automatique exacte n’a pas réussi sur cet essai ChatGPT**, et ne doit pas être présentée comme `method=confirmed`. La différence entre la sélection AX annoncée et le résultat observé n’a pas été expliquée ; aucune nouvelle compilation n’a été faite pour modifier cette vérification conservatrice.
+
+Un premier déclenchement à 14:19:14, juste après réautorisation, ne trouvait aucun champ focalisé puis a été interrompu pendant l’armement par une notification macOS. Le second essai a capturé directement le champ. `AXEnhancedUserInterface` renvoie `-25208` sur cette application, mais le champ est ensuite exposé sans recourir à une recherche arbitraire.
+
+**Éditeur natif identifié par les traces : CotEditor, 14:20:20–14:20:25** :
+
+- application `com.coteditor.CotEditor`, capture `AXTextArea`, `trusted=true`, `file=false` ;
+- microphone réel, 41 478 échantillons (~2,6 s), transcription de 16 caractères ;
+- collage envoyé, lecture AX de 25 à 41 caractères, remplacement attendu vérifié ;
+- `sent=true confirmed=true`, `method=confirmed`, presse-papiers restauré (un élément).
+
+L’utilisateur a ensuite indiqué « sur testedit, ça marche bien ». Ce retour est conservé comme confirmation utilisateur pour TextEdit ; **aucune séquence `com.apple.TextEdit` n’apparaît dans les traces recueillies**, qui attestent directement de CotEditor. Ne pas confondre les deux noms d’application dans les résultats techniques.
+
+La restauration du presse-papiers est attestée par les traces ; le contenu n’a pas été journalisé ni comparé indépendamment octet par octet. Les scénarios champ protégé, changement de champ et modificateurs maintenus au-delà du délai restent à vérifier en intégration. Les protections correspondantes restent dans le code. Les 88 tests automatisés ne remplacent pas ces essais.
+
+Le contrôle de l’interface ChatGPT via l’outil d’automatisation est explicitement refusé sur cette machine (`Computer Use is not allowed to use the app 'com.openai.codex' for safety reasons`). Il n’a pas été contourné. La vérification visuelle ChatGPT dépend donc du retour utilisateur, complété par l’instrumentation de Voxea.
+
+Le correctif et le rapport sont enregistrés dans un commit séparé de `ce28a04`, après les retours utilisateur et l’examen des traces du parcours réel. Le dépôt ne déclare aucun distant Git ; aucun push n’a été effectué. `.rollback/` est conservé, non suivi comme au début. Les sauvegardes `.app.bak` et `.swift.bak` ne sont pas modifiées.

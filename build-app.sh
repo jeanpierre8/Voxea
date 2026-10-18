@@ -12,8 +12,8 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
 <key>CFBundleExecutable</key><string>Voxea</string>
 <key>CFBundleIdentifier</key><string>local.jp.DictationPrototype</string>
 <key>CFBundleName</key><string>Voxea</string>
-<key>CFBundleVersion</key><string>5</string>
-<key>CFBundleShortVersionString</key><string>0.4.0</string>
+<key>CFBundleVersion</key><string>6</string>
+<key>CFBundleShortVersionString</key><string>0.4.1</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>LSUIElement</key><true/>
@@ -23,3 +23,4 @@ PLIST
 # Local development signature; no installer, service, login item or system-wide change.
 codesign --force --sign - --identifier local.jp.DictationPrototype "$app"
 echo "$app"
+echo "Signature locale : vérifier et, si nécessaire, réautoriser cette version dans Accessibilité après compilation."

@@ -92,7 +92,7 @@ import FluidAudio
     @Published var automaticInsertion = UserDefaults.standard.object(forKey: "automaticInsertion") as? Bool ?? true {
         didSet { UserDefaults.standard.set(automaticInsertion, forKey: "automaticInsertion") }
     }
-    @Published var automaticCopy = UserDefaults.standard.object(forKey: "automaticCopy") as? Bool ?? true {
+    @Published var automaticCopy = UserDefaults.standard.object(forKey: "automaticCopy") as? Bool ?? false {
         didSet { UserDefaults.standard.set(automaticCopy, forKey: "automaticCopy") }
     }
     @Published var testName = ""
@@ -145,6 +145,7 @@ import FluidAudio
     private var partialRunning = false
     private var lastPartialCount = 0
     private var startSound: NSSound?
+    private var activationObserver: NSObjectProtocol?
     init() {
         do { memoryStore = try CorrectionStore(); try reloadMemory() }
         catch { memoryError = error.localizedDescription }
@@ -157,6 +158,7 @@ import FluidAudio
         }
         hotkey.callback = { [weak self] down, escape in
             guard let self else { return }
+            Diagnostics.log("hotkey down=\(down) escape=\(escape) ready=\(self.ready) busy=\(self.busy) recording=\(self.recording)")
             if escape { if down { self.cancel() }; return }
             guard let action = self.keyState.event(down: down, toggle: self.toggle) else { return }
             switch action {
@@ -165,6 +167,17 @@ import FluidAudio
                 self.begin()
             case .stop: self.finish()
             case .cancel: self.cancel()
+            }
+        }
+        activationObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+                Diagnostics.log("activation app=\(app?.bundleIdentifier ?? "nil")")
+                if let target = self.target, app?.processIdentifier != target.pid {
+                    self.target = nil
+                    Diagnostics.log("destination invalidated reason=applicationSwitch")
+                }
             }
         }
         applyShortcut()
@@ -203,7 +216,10 @@ import FluidAudio
     func begin() {
         guard ready, !busy, !recording, !arming else { return }
         session = UUID(); let ticket = session
+        Diagnostics.log("begin insert=\(automaticInsertion) copy=\(automaticCopy) file=\(testAudio != nil)")
+        accessGranted = AXIsProcessTrusted()
         arming = true; target = InsertionTarget.capture()
+        Diagnostics.log("captured target=\(target?.fingerprint ?? "nil") trusted=\(AXIsProcessTrusted())")
         targetBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         Task {
             let allowed: Bool
@@ -225,6 +241,7 @@ import FluidAudio
                 try await Task.sleep(nanoseconds: 180_000_000)
                 guard ticket == session, keyState.recording else { return }
                 if let testAudio { microphone.startTest(testAudio) } else { try microphone.start() }
+                Diagnostics.log("microphone.started file=\(testAudio != nil) targetFocused=\(target?.stillFocused() ?? false)")
                 recording = true; provisional = ""; seconds = 0; lastPartialCount = 0
                 status = testAudio == nil ? "Écoute · Échap pour annuler" : "Fichier test · Échap pour annuler"; hotkey.captureEscape(true); showOverlay()
                 timer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak model = self] _ in
@@ -253,21 +270,23 @@ import FluidAudio
         }
     }
     func finish() {
+        Diagnostics.log("finish arming=\(arming) recording=\(recording)")
         if arming { arming = false; session = UUID(); keyState.cancel(); return }
         guard recording else { return }
         recording = false; busy = true; timer?.invalidate(); timer = nil
         microphone.stop(); hotkey.captureEscape(false); level = 0
         cue("Pop")
         let samples = microphone.snapshot().samples
+        Diagnostics.log("audio samples=\(samples.count) audible=\(samples.contains(where: { abs($0) > 0.01 }))")
         microphone.clear()
-        let destination = target; target = nil
+        let destination = target
         let contextBundleID = targetBundleID; targetBundleID = nil
         let ticket = session; let pending = worker
         status = "Transcription finale…"
         Task {
             await pending?.value
             guard ticket == session else { busy = false; return }
-            defer { busy = false }
+            defer { busy = false; target = nil }
             guard samples.count >= 4800, samples.contains(where: { abs($0) > 0.01 }) else {
                 status = "Enregistrement trop court ou silencieux."; overlay?.orderOut(nil); return
             }
@@ -283,7 +302,9 @@ import FluidAudio
                 let formatted = TextFormatting.apply(corrected.text, options: lastFormattingOptions)
                 finalText = formatted; provisional = formatted
                 countCorrections(corrected.usage)
-                let result = await TextDelivery.deliver(formatted, to: destination, insert: automaticInsertion, keepCopy: automaticCopy)
+                Diagnostics.log("transcribed chars=\(formatted.count) destination=\(destination?.fingerprint ?? "nil") insert=\(automaticInsertion) copy=\(automaticCopy)")
+                let result = await TextDelivery.deliver(formatted, to: target == nil ? nil : destination, insert: automaticInsertion, keepCopy: automaticCopy)
+                Diagnostics.log("delivery method=\(result.method.rawValue)")
                 accessGranted = AXIsProcessTrusted()
                 status = result.message + " · " + String(format: "%.2f", latency) + " s"
                 if !corrected.applied.isEmpty { status += " · \(corrected.applied.count) correction(s)" }
@@ -318,6 +339,7 @@ import FluidAudio
         let screen = NSScreen.screens.first(where: { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) }) ?? NSScreen.main
         if let frame = screen?.visibleFrame { overlay?.setFrameOrigin(NSPoint(x: frame.midX - 240, y: frame.minY + 32)) }
         overlay?.orderFrontRegardless()
+        Diagnostics.log("overlay shown key=\(overlay?.isKeyWindow ?? false)")
     }
 }
 
@@ -378,7 +400,7 @@ struct SettingsView: View {
                 Text("Après la dictée").font(.headline)
                 Toggle("Insérer automatiquement dans le champ actif", isOn: $model.automaticInsertion)
                 Toggle("Copier automatiquement le texte final", isOn: $model.automaticCopy)
-                Text("Le texte copié reste disponible pour le coller ailleurs avec ⌘V. Les champs web utilisent un collage de secours, sans envoyer le message.")
+                Text("Le collage préserve le presse-papiers, sauf si vous activez la copie automatique. Aucun message n’est envoyé.")
                     .font(.caption).foregroundStyle(.secondary)
             }.disabled(model.recording || model.busy)
             Toggle("Sons discrets au début et à la fin", isOn: $model.sound).disabled(model.recording || model.busy)
@@ -435,6 +457,7 @@ struct SettingsView: View {
     var window: NSWindow!
     var statusItem: NSStatusItem!
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Diagnostics.log("launch build=\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") ?? "?") trusted=\(AXIsProcessTrusted())")
         model = DictationModel()
         installMainMenu()
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 660), styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
